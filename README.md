@@ -13,7 +13,7 @@ It installs the `ocm` binary matching the runner OS (Linux, macOS, Windows) and 
 | `@v2` | OCM v2 CLI | [open-component-model/open-component-model](https://github.com/open-component-model/open-component-model/releases) |
 | `@v1` | OCM v1 (legacy) CLI | [open-component-model/ocm](https://github.com/open-component-model/ocm/releases) |
 
-`main` tracks `v2`. Workflows that still need the legacy CLI must reference `@v1` (see the [v1 README](https://github.com/open-component-model/ocm-setup-action/tree/v1#readme)).
+`main` tracks `v2`. Workflows that still need the legacy CLI must reference `@v1`. The two major versions take different inputs and produce different outputs, see [Migrating from v1](#migrating-from-v1) and [v1 (legacy)](#v1-legacy).
 
 ## Inputs
 
@@ -46,6 +46,43 @@ jobs:
         with:
           version: 0.23.0
       - run: ocm version
+```
+
+## Migrating from v1
+
+| | `@v1` | `@v2` |
+|---|---|---|
+| Installs | OCM v1 CLI | OCM v2 CLI |
+| `version` | `latest` or a version such as `v0.19.0` from [open-component-model/ocm](https://github.com/open-component-model/ocm/releases) | `latest` or a version such as `0.23.0` / `v0.23.0` from [open-component-model/open-component-model](https://github.com/open-component-model/open-component-model/releases) |
+| `repo` | default `open-component-model/ocm` | default `open-component-model/open-component-model` |
+| `verify-attestation`, `cache`, `token` | — | see [Inputs](#inputs) |
+| Outputs | none | `version`, `path`, `cache-hit` |
+| Platforms | Linux x64 only | Linux, macOS, Windows on x64 and arm64 |
+| Integrity checks | none | release asset SHA-256 digest, build provenance attestation |
+| Install location | `~/.local/bin` | `$RUNNER_TOOL_CACHE/ocm/<version>/<arch>` |
+
+The CLI itself changed between v1 and v2: commands and flags of v1 workflows do not carry over unchanged. Only switch to `@v2` once the workflow's `ocm` invocations are migrated to the OCM v2 CLI.
+
+## v1 (legacy)
+
+`@v1` installs the OCM v1 CLI (`ocm-<version>-linux-amd64.tar.gz`) on Linux x64 runners into `~/.local/bin`.
+
+| Input | Default | Description |
+|---|---|---|
+| `version` | `latest` | `latest` or a release version of [open-component-model/ocm](https://github.com/open-component-model/ocm/releases), e.g. `v0.19.0`. |
+| `repo` | `open-component-model/ocm` | Repository hosting the releases. |
+
+It has no outputs.
+
+```yaml
+jobs:
+  ocm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: open-component-model/ocm-setup-action@v1
+        with:
+          version: v0.19.0
+      - run: ocm --version
 ```
 
 ## Licensing
