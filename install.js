@@ -11,6 +11,30 @@ const architectures = { X64: 'amd64', ARM64: 'arm64' };
 
 const sha256 = (data) => `sha256:${crypto.createHash('sha256').update(data).digest('hex')}`;
 
+// Parses a stable release tag (vMAJOR.MINOR.PATCH); returns undefined for prereleases and other tags.
+const parseStable = (tag) => {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(tag);
+  return m && m.slice(1).map(Number);
+};
+
+// Picks the highest stable semver release instead of GitHub's "latest" flag, which follows
+// publication order: a patch for an older minor published after a newer minor would win otherwise.
+async function highestStableRelease(github, owner, repo) {
+  const releases = await github.paginate(github.rest.repos.listReleases, { owner, repo, per_page: 100 });
+  const compare = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  let best;
+  for (const r of releases) {
+    const v = !r.draft && !r.prerelease && parseStable(r.tag_name);
+    if (v && (!best || compare(v, best.v) > 0)) {
+      best = { v, release: r };
+    }
+  }
+  if (!best) {
+    throw new Error('no stable release found');
+  }
+  return best.release;
+}
+
 async function resolve({ github, core }) {
   const version = process.env.OCM_VERSION || 'latest';
   const [owner, repo] = (process.env.OCM_REPO || 'open-component-model/open-component-model').split('/');
@@ -24,7 +48,7 @@ async function resolve({ github, core }) {
   let release;
   try {
     release = version === 'latest'
-      ? (await github.rest.repos.getLatestRelease({ owner, repo })).data
+      ? await highestStableRelease(github, owner, repo)
       : (await github.rest.repos.getReleaseByTag({ owner, repo, tag: `v${version.replace(/^v/, '')}` })).data;
   } catch (err) {
     throw new Error(`cannot resolve release ${version} of ${owner}/${repo}: ${err.message}`);
@@ -74,14 +98,20 @@ async function install({ core, exec }) {
     if (actual !== digest) {
       throw new Error(`digest mismatch for ${url}: expected ${digest}, got ${actual}`);
     }
+    // Write to a temp file and rename so concurrent installs into the same tool cache
+    // directory never observe or produce a partially written binary.
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(bin, data, { mode: 0o755 });
+    const tmp = `${bin}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    fs.writeFileSync(tmp, data, { mode: 0o755 });
+    fs.renameSync(tmp, bin);
   }
 
   if ((process.env.OCM_VERIFY_ATTESTATION || 'true').toLowerCase() === 'true') {
-    await exec.exec('gh', ['attestation', 'verify', bin, '--repo', repo], {
-      env: { ...process.env, GH_TOKEN: process.env.OCM_TOKEN },
-    });
+    const env = { ...process.env };
+    if (process.env.OCM_TOKEN) {
+      env.GH_TOKEN = process.env.OCM_TOKEN;
+    }
+    await exec.exec('gh', ['attestation', 'verify', bin, '--repo', repo], { env });
   }
 
   core.addPath(dir);

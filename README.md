@@ -19,8 +19,8 @@ It installs the `ocm` binary matching the runner OS (Linux, macOS, Windows) and 
 
 | Input | Default | Description |
 |---|---|---|
-| `version` | `latest` | `latest` or a release version such as `0.23.0` / `v0.23.0`. `latest` resolves to the newest non-prerelease. |
-| `repo` | `open-component-model/open-component-model` | Repository hosting the releases. |
+| `version` | `latest` | `latest` or a release version such as `0.23.0` / `v0.23.0`. `latest` resolves to the highest stable (non-draft, non-prerelease) semantic version, independent of publication order. |
+| `repo` | `open-component-model/open-component-model` | GitHub repository (`owner/name`) to install from. Only needed for forks or mirrors (e.g. on GitHub Enterprise Server) that publish GitHub releases with the same `ocm-<os>-<arch>` assets; arbitrary download URLs are not supported. |
 | `verify-attestation` | `true` | Verify the build provenance attestation with `gh attestation verify`. Needs the `gh` CLI on the runner (preinstalled on GitHub-hosted runners); set to `false` on runners without it. |
 | `cache` | `true` | Cache the binary with `actions/cache`, keyed by repository, release tag, platform and asset digest. Cached binaries are re-checked against the release digest before use. |
 | `token` | `${{ github.token }}` | Token for GitHub API calls and attestation verification. |

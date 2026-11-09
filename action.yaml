@@ -6,7 +6,7 @@ inputs:
     required: false
     default: latest
   repo:
-    description: "Repository hosting the ocm CLI releases"
+    description: "GitHub repository (owner/name, on the workflow's GitHub host) publishing ocm releases with the same asset layout, e.g. a fork or mirror"
     required: false
     default: "open-component-model/open-component-model"
   verify-attestation:
