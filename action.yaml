@@ -32,7 +32,7 @@ outputs:
     description: "Whether the binary was taken from the cache instead of downloaded"
     value: ${{ steps.install.outputs.cache-hit }}
 branding:
-  icon: "package"
+  icon: "download-cloud"
   color: "blue"
 runs:
   using: "composite"
