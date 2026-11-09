@@ -10,9 +10,9 @@ inputs:
     required: false
     default: "open-component-model/open-component-model"
   verify-attestation:
-    description: "Verify the GitHub build provenance attestation of the binary with gh attestation verify"
+    description: "Verify the GitHub build provenance attestation of the binary with gh attestation verify (requires the gh CLI on the runner)"
     required: false
-    default: "false"
+    default: "true"
   token:
     description: "GitHub token used for release lookups and attestation verification"
     required: false

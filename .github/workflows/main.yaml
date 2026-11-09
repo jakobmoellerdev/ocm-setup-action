@@ -35,7 +35,6 @@ jobs:
     name: v2 (${{ matrix.os }}, ${{ matrix.version }})
     permissions:
       contents: read
-      attestations: read
     steps:
     - name: Checkout
       uses: actions/checkout@v7
@@ -44,7 +43,6 @@ jobs:
       uses: ./v2
       with:
         version: ${{ matrix.version }}
-        verify-attestation: "true"
     - name: Output
       shell: bash
       run: |

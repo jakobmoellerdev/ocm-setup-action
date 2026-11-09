@@ -13,7 +13,7 @@ The repository provides two actions:
 
 ## OCM v2
 
-Installs the `ocm` binary matching the runner OS (Linux, macOS, Windows) and architecture (x64, arm64), verifies its SHA-256 digest against the digest GitHub records for the release asset, and adds it to the `PATH`.
+Installs the `ocm` binary matching the runner OS (Linux, macOS, Windows) and architecture (x64, arm64), verifies its SHA-256 digest against the digest GitHub records for the release asset and its build provenance attestation, and adds it to the `PATH`.
 
 ### Inputs
 
@@ -21,7 +21,7 @@ Installs the `ocm` binary matching the runner OS (Linux, macOS, Windows) and arc
 |---|---|---|
 | `version` | `latest` | `latest` or a release version such as `0.23.0` / `v0.23.0`. `latest` resolves to the newest non-prerelease. |
 | `repo` | `open-component-model/open-component-model` | Repository hosting the releases. |
-| `verify-attestation` | `false` | Verify the build provenance attestation with `gh attestation verify`. Requires the `attestations: read` permission. |
+| `verify-attestation` | `true` | Verify the build provenance attestation with `gh attestation verify`. Needs the `gh` CLI on the runner (preinstalled on GitHub-hosted runners); set to `false` on runners without it. |
 | `token` | `${{ github.token }}` | Token for GitHub API calls and attestation verification. |
 
 ### Outputs
@@ -39,12 +39,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      attestations: read
     steps:
       - uses: open-component-model/ocm-setup-action/v2@main
         with:
           version: 0.23.0
-          verify-attestation: "true"
       - run: ocm version
 ```
 

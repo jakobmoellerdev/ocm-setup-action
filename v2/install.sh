@@ -5,7 +5,7 @@
 #   version             release to install ("latest" or a semver with or without leading "v")
 #   repo                GitHub repository hosting the releases
 #   token               GitHub token for API calls (optional, avoids rate limits)
-#   verify_attestation  "true" to verify the GitHub build provenance attestation via gh
+#   verify_attestation  "false" to skip verifying the GitHub build provenance attestation via gh
 set -euo pipefail
 
 repo="${repo:-open-component-model/open-component-model}"
@@ -72,7 +72,11 @@ if [ "sha256:${actual}" != "$digest" ]; then
   exit 1
 fi
 
-if [ "${verify_attestation:-false}" = true ]; then
+if [ "${verify_attestation:-true}" = true ]; then
+  if ! command -v gh >/dev/null; then
+    echo "::error::gh CLI not found; install it or set verify-attestation: false" >&2
+    exit 1
+  fi
   GH_TOKEN="${token:-}" gh attestation verify "$bin" --repo "$repo"
 fi
 
