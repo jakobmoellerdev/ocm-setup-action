@@ -13,6 +13,10 @@ inputs:
     description: "Verify the GitHub build provenance attestation of the binary with gh attestation verify (requires the gh CLI on the runner)"
     required: false
     default: "true"
+  cache:
+    description: "Cache the downloaded ocm binary with actions/cache, keyed by release, platform and digest"
+    required: false
+    default: "true"
   token:
     description: "GitHub token used for release lookups and attestation verification"
     required: false
@@ -20,25 +24,54 @@ inputs:
 outputs:
   version:
     description: "Installed release tag, e.g. v0.23.0"
-    value: ${{ steps.install.outputs.version }}
+    value: ${{ steps.resolve.outputs.version }}
   path:
     description: "Absolute path of the installed ocm binary"
-    value: ${{ steps.install.outputs.path }}
+    value: ${{ steps.resolve.outputs.path }}
+  cache-hit:
+    description: "Whether the binary was taken from the cache instead of downloaded"
+    value: ${{ steps.install.outputs.cache-hit }}
 branding:
   color: "blue"
 runs:
   using: "composite"
   steps:
     - uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
-      id: install
+      id: resolve
       env:
         OCM_VERSION: ${{ inputs.version }}
         OCM_REPO: ${{ inputs.repo }}
+        ACTION_PATH: ${{ github.action_path }}
+      with:
+        github-token: ${{ inputs.token }}
+        script: |
+          const { resolve } = require(require('node:path').join(process.env.ACTION_PATH, 'install.js'));
+          await resolve({ github, core });
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: restore
+      if: inputs.cache == 'true'
+      with:
+        path: ${{ steps.resolve.outputs.dir }}
+        key: ${{ steps.resolve.outputs.cache-key }}
+    - uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+      id: install
+      env:
+        OCM_REPO: ${{ inputs.repo }}
+        OCM_VERSION: ${{ steps.resolve.outputs.version }}
+        OCM_URL: ${{ steps.resolve.outputs.url }}
+        OCM_DIGEST: ${{ steps.resolve.outputs.digest }}
+        OCM_DIR: ${{ steps.resolve.outputs.dir }}
+        OCM_PATH: ${{ steps.resolve.outputs.path }}
         OCM_VERIFY_ATTESTATION: ${{ inputs.verify-attestation }}
         OCM_TOKEN: ${{ inputs.token }}
         ACTION_PATH: ${{ github.action_path }}
       with:
         github-token: ${{ inputs.token }}
         script: |
-          const install = require(require('node:path').join(process.env.ACTION_PATH, 'install.js'));
-          await install({ github, core, exec });
+          const { install } = require(require('node:path').join(process.env.ACTION_PATH, 'install.js'));
+          await install({ core, exec });
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.cache == 'true' && steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: ${{ steps.resolve.outputs.dir }}
+        key: ${{ steps.resolve.outputs.cache-key }}

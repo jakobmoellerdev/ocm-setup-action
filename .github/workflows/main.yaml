@@ -46,8 +46,34 @@ jobs:
     - name: Output
       shell: bash
       run: |
-        echo "installed ${{ steps.setup.outputs.version }} at ${{ steps.setup.outputs.path }}"
+        echo "installed ${{ steps.setup.outputs.version }} at ${{ steps.setup.outputs.path }} (cache-hit: ${{ steps.setup.outputs.cache-hit }})"
         ocm version
         if [ "${{ matrix.version }}" != latest ]; then
           ocm version | grep -F "Version:  ${{ matrix.version }}"
         fi
+
+  test_v2_cache:
+    needs: test_v2
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        cache: ["true", "false"]
+    runs-on: ${{ matrix.os }}
+    name: v2 cache (${{ matrix.os }}, cache=${{ matrix.cache }})
+    permissions:
+      contents: read
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+    - name: Setup ocm v2
+      id: setup
+      uses: ./v2
+      with:
+        version: 0.23.0
+        cache: ${{ matrix.cache }}
+    - name: Expect cache-hit=${{ matrix.cache }}
+      shell: bash
+      run: |
+        test "${{ steps.setup.outputs.cache-hit }}" = "${{ matrix.cache }}"
+        ocm version | grep -F "Version:  0.23.0"
