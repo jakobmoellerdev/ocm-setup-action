@@ -29,11 +29,16 @@ branding:
 runs:
   using: "composite"
   steps:
-    - shell: bash
+    - uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
       id: install
       env:
-        version: ${{ inputs.version }}
-        repo: ${{ inputs.repo }}
-        token: ${{ inputs.token }}
-        verify_attestation: ${{ inputs.verify-attestation }}
-      run: bash "${{ github.action_path }}/install.sh"
+        OCM_VERSION: ${{ inputs.version }}
+        OCM_REPO: ${{ inputs.repo }}
+        OCM_VERIFY_ATTESTATION: ${{ inputs.verify-attestation }}
+        OCM_TOKEN: ${{ inputs.token }}
+        ACTION_PATH: ${{ github.action_path }}
+      with:
+        github-token: ${{ inputs.token }}
+        script: |
+          const install = require(require('node:path').join(process.env.ACTION_PATH, 'install.js'));
+          await install({ github, core, exec });
