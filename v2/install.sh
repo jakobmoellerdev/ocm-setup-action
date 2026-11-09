@@ -61,10 +61,11 @@ mkdir -p "$bin_dir"
 echo "Installing ocm ${tag} (${os}/${arch}) from ${repo}"
 curl -fsSL --retry 3 -o "$bin" "$download_url"
 
+# Hash stdin: sha256sum escapes paths containing backslashes (Windows) with a leading "\".
 if command -v sha256sum >/dev/null; then
-  actual="$(sha256sum "$bin" | cut -d' ' -f1)"
+  actual="$(sha256sum <"$bin" | cut -d' ' -f1)"
 else
-  actual="$(shasum -a 256 "$bin" | cut -d' ' -f1)"
+  actual="$(shasum -a 256 <"$bin" | cut -d' ' -f1)"
 fi
 if [ "sha256:${actual}" != "$digest" ]; then
   echo "::error::digest mismatch for ${asset}: expected ${digest}, got sha256:${actual}" >&2
