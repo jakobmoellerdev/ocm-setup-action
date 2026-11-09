@@ -1,5 +1,5 @@
-name: "Open Component Model command line (ocm) installer"
-description: "Install the ocm v2 CLI from https://github.com/open-component-model/open-component-model/releases. Accepts latest or a version like 0.23.0."
+name: "Setup Open Component Model CLI"
+description: "Install the Open Component Model (OCM) v2 CLI with digest and attestation verification and caching."
 inputs:
   version:
     description: "Version of the ocm CLI to install, either latest or a version such as 0.23.0 or v0.23.0"
@@ -32,6 +32,7 @@ outputs:
     description: "Whether the binary was taken from the cache instead of downloaded"
     value: ${{ steps.install.outputs.cache-hit }}
 branding:
+  icon: "package"
   color: "blue"
 runs:
   using: "composite"
