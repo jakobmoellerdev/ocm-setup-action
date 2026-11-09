@@ -30,9 +30,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
-        version: [latest, 0.23.0]
+        # One cache=true leg per OS, so no two legs race to save the same cache key.
+        setup:
+        - { version: latest, cache: "false" }
+        - { version: 0.23.0, cache: "false" }
+        - { version: 0.23.0, cache: "true" }
     runs-on: ${{ matrix.os }}
-    name: v2 (${{ matrix.os }}, ${{ matrix.version }})
+    name: v2 (${{ matrix.os }}, ${{ matrix.setup.version }}, cache=${{ matrix.setup.cache }})
     permissions:
       contents: read
     steps:
@@ -42,38 +46,27 @@ jobs:
       id: setup
       uses: ./v2
       with:
-        version: ${{ matrix.version }}
-    - name: Output
+        version: ${{ matrix.setup.version }}
+        cache: ${{ matrix.setup.cache }}
+    - name: Check installed version
       shell: bash
       run: |
         echo "installed ${{ steps.setup.outputs.version }} at ${{ steps.setup.outputs.path }} (cache-hit: ${{ steps.setup.outputs.cache-hit }})"
         ocm version
-        if [ "${{ matrix.version }}" != latest ]; then
-          ocm version | grep -F "Version:  ${{ matrix.version }}"
+        if [ "${{ matrix.setup.version }}" != latest ]; then
+          ocm version | grep -F "Version:  ${{ matrix.setup.version }}"
         fi
-
-  test_v2_cache:
-    needs: test_v2
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        cache: ["true", "false"]
-    runs-on: ${{ matrix.os }}
-    name: v2 cache (${{ matrix.os }}, cache=${{ matrix.cache }})
-    permissions:
-      contents: read
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v7
-    - name: Setup ocm v2
-      id: setup
+    - name: Remove installed binary to simulate a fresh runner
+      shell: bash
+      run: rm -rf "$(dirname "${{ steps.setup.outputs.path }}")"
+    - name: Setup ocm v2 again
+      id: setup-again
       uses: ./v2
       with:
-        version: 0.23.0
-        cache: ${{ matrix.cache }}
-    - name: Expect cache-hit=${{ matrix.cache }}
+        version: ${{ matrix.setup.version }}
+        cache: ${{ matrix.setup.cache }}
+    - name: Expect cache-hit=${{ matrix.setup.cache }}
       shell: bash
       run: |
-        test "${{ steps.setup.outputs.cache-hit }}" = "${{ matrix.cache }}"
-        ocm version | grep -F "Version:  0.23.0"
+        test "${{ steps.setup-again.outputs.cache-hit }}" = "${{ matrix.setup.cache }}"
+        ocm version
