@@ -1,0 +1,39 @@
+name: "Open Component Model v2 command line (ocm) installer"
+description: "Install the ocm v2 CLI from https://github.com/open-component-model/open-component-model/releases. Accepts latest or a version like 0.23.0."
+inputs:
+  version:
+    description: "Version of the ocm CLI to install, either latest or a version such as 0.23.0 or v0.23.0"
+    required: false
+    default: latest
+  repo:
+    description: "Repository hosting the ocm CLI releases"
+    required: false
+    default: "open-component-model/open-component-model"
+  verify-attestation:
+    description: "Verify the GitHub build provenance attestation of the binary with gh attestation verify"
+    required: false
+    default: "false"
+  token:
+    description: "GitHub token used for release lookups and attestation verification"
+    required: false
+    default: ${{ github.token }}
+outputs:
+  version:
+    description: "Installed release tag, e.g. v0.23.0"
+    value: ${{ steps.install.outputs.version }}
+  path:
+    description: "Absolute path of the installed ocm binary"
+    value: ${{ steps.install.outputs.path }}
+branding:
+  color: "blue"
+runs:
+  using: "composite"
+  steps:
+    - shell: bash
+      id: install
+      env:
+        version: ${{ inputs.version }}
+        repo: ${{ inputs.repo }}
+        token: ${{ inputs.token }}
+        verify_attestation: ${{ inputs.verify-attestation }}
+      run: bash "${{ github.action_path }}/install.sh"
