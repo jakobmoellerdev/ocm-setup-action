@@ -2,20 +2,20 @@
 
 [![REUSE status](https://api.reuse.software/badge/github.com/open-component-model/ocm-setup-action)](https://api.reuse.software/info/github.com/open-component-model/ocm-setup-action)
 
-This GitHub Action installs a dedicated version of the ocm CLI to be used in further steps. For example, it could be used in a Makefile executed as subsequent step to build a project.
+This GitHub Action installs a dedicated version of the [OCM v2](https://github.com/open-component-model/open-component-model) `ocm` CLI to be used in further steps. For example, it could be used in a Makefile executed as subsequent step to build a project.
 
-The repository provides two actions:
+It installs the `ocm` binary matching the runner OS (Linux, macOS, Windows) and architecture (x64, arm64), verifies its SHA-256 digest against the digest GitHub records for the release asset and its build provenance attestation, and adds it to the `PATH`.
 
-| Action | CLI | Releases |
+## Versions
+
+| Action ref | Installs | Releases |
 |---|---|---|
-| `open-component-model/ocm-setup-action/v2` | OCM v2 | [open-component-model/open-component-model](https://github.com/open-component-model/open-component-model/releases) |
-| `open-component-model/ocm-setup-action` | OCM v1 (legacy) | [open-component-model/ocm](https://github.com/open-component-model/ocm/releases) |
+| `@v2` | OCM v2 CLI | [open-component-model/open-component-model](https://github.com/open-component-model/open-component-model/releases) |
+| `@v1` | OCM v1 (legacy) CLI | [open-component-model/ocm](https://github.com/open-component-model/ocm/releases) |
 
-## OCM v2
+`main` tracks `v2`. Workflows that still need the legacy CLI must reference `@v1` (see the [v1 README](https://github.com/open-component-model/ocm-setup-action/tree/v1#readme)).
 
-Installs the `ocm` binary matching the runner OS (Linux, macOS, Windows) and architecture (x64, arm64), verifies its SHA-256 digest against the digest GitHub records for the release asset and its build provenance attestation, and adds it to the `PATH`.
-
-### Inputs
+## Inputs
 
 | Input | Default | Description |
 |---|---|---|
@@ -25,7 +25,7 @@ Installs the `ocm` binary matching the runner OS (Linux, macOS, Windows) and arc
 | `cache` | `true` | Cache the binary with `actions/cache`, keyed by repository, release tag, platform and asset digest. Cached binaries are re-checked against the release digest before use. |
 | `token` | `${{ github.token }}` | Token for GitHub API calls and attestation verification. |
 
-### Outputs
+## Outputs
 
 | Output | Description |
 |---|---|
@@ -33,7 +33,7 @@ Installs the `ocm` binary matching the runner OS (Linux, macOS, Windows) and arc
 | `path` | Absolute path of the installed `ocm` binary. |
 | `cache-hit` | Whether an existing binary (restored cache, or the runner tool cache on self-hosted runners) was reused instead of downloaded. |
 
-### Example usage
+## Example usage
 
 ```yaml
 jobs:
@@ -42,36 +42,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: open-component-model/ocm-setup-action/v2@main
+      - uses: open-component-model/ocm-setup-action@v2
         with:
           version: 0.23.0
       - run: ocm version
-```
-
-## OCM v1 (legacy)
-
-### Inputs
-
-#### `version`
-
-**Optional** The ocm-cli version to install. By default the latest version is installed.
-
-#### `repo`
-
-**Optional** The repository of the ocm-cli to install. Default `"open-component-model/ocm"`.
-
-### Example usage
-
-```yaml
-jobs:
-  ocm-setup-action:
-    runs-on: ubuntu-latest
-    name: ocm-setup-action
-    steps:
-      - uses: open-component-model/ocm-setup-action@main
-        with:
-          version: v0.19.0
-      - run: ocm --version
 ```
 
 ## Licensing

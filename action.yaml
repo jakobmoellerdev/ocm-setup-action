@@ -1,24 +1,77 @@
-name: "Open Component Model command line (ocm-cli) installer"
-description: "Install a specific version of the ocm binary. Acceptable values are latest or any semantic version string like 1.15.0 see: https://github.com/open-component-model/ocm/releases"
+name: "Open Component Model command line (ocm) installer"
+description: "Install the ocm v2 CLI from https://github.com/open-component-model/open-component-model/releases. Accepts latest or a version like 0.23.0."
 inputs:
   version:
-    description: "Version of the ocm-cli (defaulted to latest version)"
-    required: true
+    description: "Version of the ocm CLI to install, either latest or a version such as 0.23.0 or v0.23.0"
+    required: false
     default: latest
   repo:
-    description: "Repository of the ocm-cli"
-    required: true
-    default: "open-component-model/ocm"
+    description: "Repository hosting the ocm CLI releases"
+    required: false
+    default: "open-component-model/open-component-model"
+  verify-attestation:
+    description: "Verify the GitHub build provenance attestation of the binary with gh attestation verify (requires the gh CLI on the runner)"
+    required: false
+    default: "true"
+  cache:
+    description: "Cache the downloaded ocm binary with actions/cache, keyed by release, platform and digest"
+    required: false
+    default: "true"
+  token:
+    description: "GitHub token used for release lookups and attestation verification"
+    required: false
+    default: ${{ github.token }}
+outputs:
+  version:
+    description: "Installed release tag, e.g. v0.23.0"
+    value: ${{ steps.resolve.outputs.version }}
+  path:
+    description: "Absolute path of the installed ocm binary"
+    value: ${{ steps.resolve.outputs.path }}
+  cache-hit:
+    description: "Whether the binary was taken from the cache instead of downloaded"
+    value: ${{ steps.install.outputs.cache-hit }}
 branding:
   color: "blue"
 runs:
   using: "composite"
   steps:
-    - shell: bash
+    - uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+      id: resolve
+      env:
+        OCM_VERSION: ${{ inputs.version }}
+        OCM_REPO: ${{ inputs.repo }}
+        ACTION_PATH: ${{ github.action_path }}
+      with:
+        github-token: ${{ inputs.token }}
+        script: |
+          const { resolve } = require(require('node:path').join(process.env.ACTION_PATH, 'install.js'));
+          await resolve({ github, core });
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: restore
+      if: inputs.cache == 'true'
+      with:
+        path: ${{ steps.resolve.outputs.dir }}
+        key: ${{ steps.resolve.outputs.cache-key }}
+    - uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
       id: install
       env:
-        version: ${{ inputs.version }}
-        repo: ${{ inputs.repo }}
-      run: |
-        chmod a+x "${{ github.action_path }}/install.sh"
-        "${{ github.action_path }}/install.sh"
+        OCM_REPO: ${{ inputs.repo }}
+        OCM_VERSION: ${{ steps.resolve.outputs.version }}
+        OCM_URL: ${{ steps.resolve.outputs.url }}
+        OCM_DIGEST: ${{ steps.resolve.outputs.digest }}
+        OCM_DIR: ${{ steps.resolve.outputs.dir }}
+        OCM_PATH: ${{ steps.resolve.outputs.path }}
+        OCM_VERIFY_ATTESTATION: ${{ inputs.verify-attestation }}
+        OCM_TOKEN: ${{ inputs.token }}
+        ACTION_PATH: ${{ github.action_path }}
+      with:
+        github-token: ${{ inputs.token }}
+        script: |
+          const { install } = require(require('node:path').join(process.env.ACTION_PATH, 'install.js'));
+          await install({ core, exec });
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.cache == 'true' && steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: ${{ steps.resolve.outputs.dir }}
+        key: ${{ steps.resolve.outputs.cache-key }}
