@@ -80,7 +80,10 @@ jobs:
     - name: Create component versions
       shell: bash
       run: |
-        export REPOSITORY="${GITHUB_REPOSITORY,,}" OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+        # tr instead of ${VAR,,}: macOS runners run bash 3.2.
+        REPOSITORY="$(tr '[:upper:]' '[:lower:]' <<< "$GITHUB_REPOSITORY")"
+        OWNER="$(tr '[:upper:]' '[:lower:]' <<< "$GITHUB_REPOSITORY_OWNER")"
+        export REPOSITORY OWNER
         echo "CV_REPOSITORY=transport-archive//github.com/$REPOSITORY:1.0.0" >> "$GITHUB_ENV"
         echo "CV_IMPOSTOR=transport-archive//github.com/$OWNER/ocm-setup-action-impostor:1.0.0" >> "$GITHUB_ENV"
         ocm add component-version --constructor .github/test/component-constructor.yaml
