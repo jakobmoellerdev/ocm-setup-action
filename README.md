@@ -73,13 +73,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: open-component-model/ocm-setup-action@v2.1.0
-      - run: ocm add cv --repository ctf::ctf --constructor component-constructor.yaml
+      - run: ocm add cv --constructor component-constructor.yaml # creates ./transport-archive
+      # Signs every component version in ./transport-archive
       - uses: open-component-model/ocm-setup-action/sign/cosign@v2.1.0
         id: sign
-        with:
-          component-versions: ctf::ctf//github.com/acme/app:1.0.0
       # The signature is part of the component descriptor and is transferred with it.
-      - run: ocm transfer cv ctf::ctf//github.com/acme/app:1.0.0 ghcr.io/acme/components
+      - run: ocm transfer cv transport-archive//github.com/acme/app:1.0.0 ghcr.io/acme/components
       - run: echo "Signed as $IDENTITY"
         env:
           IDENTITY: ${{ steps.sign.outputs.certificate-identity }}
@@ -87,7 +86,7 @@ jobs:
 
 | Input | Default | Description |
 |---|---|---|
-| `component-versions` | | Component version references to sign, one per line. Empty: only write the configuration, see the `config` output. |
+| `component-versions` | `transport-archive` | Component versions to sign, one per line: component version references, or repositories whose component versions are all signed. The default is the default repository of `ocm add cv`. Empty: only write the configuration, see the `config` output. |
 | `signature` | `default` | Name of the signature. |
 | `config` | | OCM configuration files (resolvers, credentials, ...) to use, one per line, see [Configuration](#configuration). |
 | `verify` | `true` | Verify each signature against the workflow identity right after signing. |
@@ -128,7 +127,7 @@ Any workflow of a repository can be run by anyone with write access to it, on an
 
 | Input | Default | Description |
 |---|---|---|
-| `component-versions` | | Component version references to verify, one per line. Empty: only write the configuration, see the `config` output. |
+| `component-versions` | `transport-archive` | Component versions to verify, one per line: component version references, or repositories whose component versions are all verified. The default is the default repository of `ocm add cv`. Empty: only write the configuration, see the `config` output. |
 | `repository` | derived, see above | Repository (`owner/name`) whose workflows must have signed every listed component version. |
 | `workflow` | any | Workflow file that must have signed, e.g. `release.yaml`. `*` matches any characters. |
 | `ref` | any | Git ref the workflow must have run on, e.g. `refs/heads/main` or `refs/tags/v*`. `*` matches any characters. |
@@ -151,11 +150,13 @@ The generated configuration holds one `signing.config.ocm.software/v1alpha1` ent
 - `config` empty and `OCM_CONFIG` set: `ocm` reads `OCM_CONFIG` and then the generated file.
 - Otherwise: `ocm` reads the generated file through `OCM_CONFIG`, merged with the files of its default lookup (`~/.ocmconfig`, `./.ocmconfig`, ...).
 
-To run `ocm` yourself, e.g. from a Makefile or Taskfile, leave `component-versions` empty and pass the `config` output:
+To run `ocm` yourself, e.g. from a Makefile or Taskfile, set `component-versions` to an empty string and pass the `config` output:
 
 ```yaml
       - uses: open-component-model/ocm-setup-action/sign/cosign@v2.1.0
         id: sign
+        with:
+          component-versions: ""
       - run: task release # runs ocm sign cv --config "$OCM_SIGNING_CONFIG" ...
         env:
           OCM_SIGNING_CONFIG: ${{ steps.sign.outputs.config }}

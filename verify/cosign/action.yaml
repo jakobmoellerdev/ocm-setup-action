@@ -2,9 +2,9 @@ name: "Verify cosign signatures of OCM component versions"
 description: "Verify keyless cosign (Sigstore) signatures of OCM component versions. By default they must have been signed by a workflow of the running repository. Needs the ocm CLI on PATH."
 inputs:
   component-versions:
-    description: "Component version references to verify, one per line, e.g. ghcr.io/acme/components//github.com/acme/app:1.0.0. Empty: only write the OCM configuration (see the config output)"
+    description: "Component versions to verify, one per line: component version references such as ghcr.io/acme/components//github.com/acme/app:1.0.0, or repositories, whose component versions are all verified. Default: transport-archive, the default repository of ocm add cv. Empty: only write the OCM configuration (see the config output)"
     required: false
-    default: ""
+    default: transport-archive
   repository:
     description: "Repository (owner/name) whose workflows must have signed. Default: the repository a component name github.com/<owner>/<repo>[/...] points to, else the running repository"
     required: false

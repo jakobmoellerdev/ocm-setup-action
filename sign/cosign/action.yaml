@@ -2,9 +2,9 @@ name: "Sign OCM component versions with cosign"
 description: "Sign OCM component versions keyless with cosign (Sigstore) as the running workflow and verify the signatures. Needs the ocm CLI on PATH and id-token: write."
 inputs:
   component-versions:
-    description: "Component version references to sign, one per line, e.g. ctf::archive//github.com/acme/app:1.0.0. Empty: only write the OCM configuration (see the config output)"
+    description: "Component versions to sign, one per line: component version references such as ctf::archive//github.com/acme/app:1.0.0, or repositories, whose component versions are all signed. Default: transport-archive, the default repository of ocm add cv. Empty: only write the OCM configuration (see the config output)"
     required: false
-    default: ""
+    default: transport-archive
   signature:
     description: "Name of the signature to create"
     required: false

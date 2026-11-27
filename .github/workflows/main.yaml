@@ -69,7 +69,7 @@ jobs:
       contents: read
       id-token: write # sign keyless with the workflow identity
     env:
-      CV: ctf::ctf//ocm.software/ocm-setup-action/test:1.0.0
+      CV: transport-archive//ocm.software/ocm-setup-action/test:1.0.0
     steps:
     - name: Checkout
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -81,17 +81,13 @@ jobs:
       shell: bash
       run: |
         export REPOSITORY="${GITHUB_REPOSITORY,,}" OWNER="${GITHUB_REPOSITORY_OWNER,,}"
-        echo "CV_REPOSITORY=ctf::ctf//github.com/$REPOSITORY:1.0.0" >> "$GITHUB_ENV"
-        echo "CV_IMPOSTOR=ctf::ctf//github.com/$OWNER/ocm-setup-action-impostor:1.0.0" >> "$GITHUB_ENV"
-        ocm add component-version --repository ctf::ctf --constructor .github/test/component-constructor.yaml
+        echo "CV_REPOSITORY=transport-archive//github.com/$REPOSITORY:1.0.0" >> "$GITHUB_ENV"
+        echo "CV_IMPOSTOR=transport-archive//github.com/$OWNER/ocm-setup-action-impostor:1.0.0" >> "$GITHUB_ENV"
+        ocm add component-version --constructor .github/test/component-constructor.yaml
+    # Signs every component version in transport-archive, the default repository of ocm add cv.
     - name: Sign
       id: sign
       uses: ./sign/cosign
-      with:
-        component-versions: |
-          ${{ env.CV }}
-          ${{ env.CV_REPOSITORY }}
-          ${{ env.CV_IMPOSTOR }}
     # Inside the reusable workflow called by release.yaml the certificate names this file, not release.yaml.
     - name: Expect the identity of this workflow file
       shell: bash
@@ -113,10 +109,9 @@ jobs:
         component-versions: |
           ${{ env.CV }}
           ${{ env.CV_REPOSITORY }}
-    - name: Verify the impostor as this repository
+    - name: Verify all component versions as this repository
       uses: ./verify/cosign
       with:
-        component-versions: ${{ env.CV_IMPOSTOR }}
         repository: ${{ github.repository }}
     - name: Verify the impostor without configuration
       id: impostor
@@ -178,3 +173,15 @@ jobs:
         component-versions: ghcr.io/open-component-model//ocm.software/cli:0.25.0
         repository: open-component-model/open-component-model
         workflow: publish-components.yml
+    - name: Write the verification configuration only
+      id: config-only
+      uses: ./verify/cosign
+      with:
+        component-versions: ""
+        repository: open-component-model/open-component-model
+        workflow: publish-components.yml
+    - name: Verify with the written configuration
+      shell: bash
+      env:
+        CONFIG: ${{ steps.config-only.outputs.config }}
+      run: ocm verify component-version --config "$CONFIG" ghcr.io/open-component-model//ocm.software/cli:0.25.0

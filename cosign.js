@@ -47,6 +47,32 @@ async function requireOcm(io) {
   }
 }
 
+// A reference names a repository only (e.g. transport-archive, the default of ocm add cv) unless it has
+// a "//" separating the component, ignoring the one of a URL scheme.
+const isRepository = (ref) => !ref.replace(/^[A-Za-z0-9]+::/, '').replace(/^[a-z]+:\/\//, '').includes('//');
+
+// Replaces repository references by references to every component version they hold.
+async function expand(exec, refs, args, env) {
+  const expanded = [];
+  for (const ref of refs) {
+    if (!isRepository(ref)) {
+      expanded.push(ref);
+      continue;
+    }
+    const { exitCode, stdout, stderr } = await exec.getExecOutput('ocm', ['get', 'component-version', ...args, ref, '-o', 'json'],
+      { env, silent: true, ignoreReturnCode: true });
+    if (exitCode !== 0) {
+      throw new Error(`listing the component versions in ${ref} failed: ${stderr.trim()}`);
+    }
+    const versions = [].concat(JSON.parse(stdout)).map(({ component: c }) => `${ref}//${c.name}:${c.version}`);
+    if (versions.length === 0) {
+      throw new Error(`${ref} holds no component versions`);
+    }
+    expanded.push(...versions);
+  }
+  return expanded;
+}
+
 // configFor(ref) returns the generated configuration to use for a component version reference,
 // configFor() the one reported as the config output.
 async function run({ core, exec, io }, signature, configFor, refs, commands) {
@@ -57,7 +83,8 @@ async function run({ core, exec, io }, signature, configFor, refs, commands) {
     return;
   }
   await requireOcm(io);
-  for (const ref of refs) {
+  const listing = configOptions(file, process.env.OCM_USER_CONFIG);
+  for (const ref of await expand(exec, refs, listing.args, listing.env)) {
     const { args, env } = configOptions(configFor(ref), process.env.OCM_USER_CONFIG);
     for (const command of commands) {
       await exec.exec('ocm', [command, 'component-version', ...args, '--signature', signature, ref], { env });
