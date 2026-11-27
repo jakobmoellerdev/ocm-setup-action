@@ -57,8 +57,8 @@ jobs:
         ocm version
 
   sign:
-    # Pull requests from forks get no OIDC token to sign with.
-    if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+    # Pull requests from another repository get no OIDC token to sign with.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
       matrix:
