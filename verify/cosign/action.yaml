@@ -1,0 +1,68 @@
+name: "Verify cosign signatures of OCM component versions"
+description: "Verify keyless cosign (Sigstore) signatures of OCM component versions. By default they must have been signed by a workflow of the running repository. Needs the ocm CLI on PATH."
+inputs:
+  component-versions:
+    description: "Component versions to verify, one per line: component version references such as ghcr.io/acme/components//github.com/acme/app:1.0.0, or repositories, whose component versions are all verified. Default: transport-archive, the default repository of ocm add cv. Empty: only write the OCM configuration (see the config output)"
+    required: false
+    default: transport-archive
+  repository:
+    description: "Repository (owner/name) whose workflows must have signed. Default: the repository a component name github.com/<owner>/<repo>[/...] points to, else the running repository"
+    required: false
+    default: ""
+  workflow:
+    description: "Workflow file that must have signed, e.g. release.yaml; * matches any characters. Default: any workflow of the repository"
+    required: false
+    default: ""
+  ref:
+    description: "Git ref the signing workflow must have run on, e.g. refs/heads/main or refs/tags/v*; * matches any characters. Default: any ref"
+    required: false
+    default: ""
+  certificate-identity:
+    description: "Exact identity the signing certificate must carry, instead of repository, workflow and ref"
+    required: false
+    default: ""
+  certificate-identity-regexp:
+    description: "Regular expression the identity in the signing certificate must match, instead of repository, workflow and ref"
+    required: false
+    default: ""
+  certificate-oidc-issuer:
+    description: "Exact OIDC issuer of the signing certificate. Empty: https://token.actions.githubusercontent.com unless certificate-oidc-issuer-regexp is set"
+    required: false
+    default: ""
+  certificate-oidc-issuer-regexp:
+    description: "Regular expression the OIDC issuer of the signing certificate must match"
+    required: false
+    default: ""
+  signature:
+    description: "Name of the signature to verify"
+    required: false
+    default: default
+  config:
+    description: "OCM configuration files (resolvers, credentials, ...) to merge with the verification configuration, one per line. Empty: OCM_CONFIG and ocm's default lookup (~/.ocmconfig, ./.ocmconfig, ...)"
+    required: false
+    default: ""
+outputs:
+  config:
+    description: "Path of the generated OCM configuration with the Sigstore verifier for the signature, expecting the repository input, else the running repository; pass it to ocm with --config"
+    value: ${{ steps.verify.outputs.config }}
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      id: verify
+      env:
+        OCM_COMPONENT_VERSIONS: ${{ inputs.component-versions }}
+        OCM_CERTIFICATE_IDENTITY: ${{ inputs.certificate-identity }}
+        OCM_REPOSITORY: ${{ inputs.repository }}
+        OCM_WORKFLOW: ${{ inputs.workflow }}
+        OCM_REF: ${{ inputs.ref }}
+        OCM_CERTIFICATE_IDENTITY_REGEXP: ${{ inputs.certificate-identity-regexp }}
+        OCM_CERTIFICATE_OIDC_ISSUER: ${{ inputs.certificate-oidc-issuer }}
+        OCM_CERTIFICATE_OIDC_ISSUER_REGEXP: ${{ inputs.certificate-oidc-issuer-regexp }}
+        OCM_SIGNATURE: ${{ inputs.signature }}
+        OCM_USER_CONFIG: ${{ inputs.config }}
+        ACTION_PATH: ${{ github.action_path }}
+      with:
+        script: |
+          const { verify } = require(require('node:path').join(process.env.ACTION_PATH, '..', '..', 'cosign.js'));
+          await verify({ core, exec, io });

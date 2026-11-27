@@ -52,6 +52,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      id-token: write # the sign tests sign keyless as main.yaml
     # The $/ self-repository syntax is not used yet because actionlint
     # (v1.7.12) rejects it.
     uses: ./.github/workflows/main.yaml # zizmor: ignore[self-repository]

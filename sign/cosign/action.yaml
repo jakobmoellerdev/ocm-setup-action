@@ -1,0 +1,44 @@
+name: "Sign OCM component versions with cosign"
+description: "Sign OCM component versions keyless with cosign (Sigstore) as the running workflow and verify the signatures. Needs the ocm CLI on PATH and id-token: write."
+inputs:
+  component-versions:
+    description: "Component versions to sign, one per line: component version references such as ctf::archive//github.com/acme/app:1.0.0, or repositories, whose component versions are all signed. Default: transport-archive, the default repository of ocm add cv. Empty: only write the OCM configuration (see the config output)"
+    required: false
+    default: transport-archive
+  signature:
+    description: "Name of the signature to create"
+    required: false
+    default: default
+  config:
+    description: "OCM configuration files (resolvers, credentials, ...) to merge with the signing configuration, one per line. Empty: OCM_CONFIG and ocm's default lookup (~/.ocmconfig, ./.ocmconfig, ...)"
+    required: false
+    default: ""
+  verify:
+    description: "Verify each signature against the workflow identity right after signing"
+    required: false
+    default: "true"
+outputs:
+  config:
+    description: "Path of the generated OCM configuration with the Sigstore signer and verifier for the signature; pass it to ocm with --config"
+    value: ${{ steps.sign.outputs.config }}
+  certificate-identity:
+    description: "Identity in the signing certificate, the workflow file defining the job, e.g. https://github.com/acme/app/.github/workflows/release.yaml@refs/heads/main"
+    value: ${{ steps.sign.outputs.certificate-identity }}
+  certificate-oidc-issuer:
+    description: "OIDC issuer in the signing certificate, e.g. https://token.actions.githubusercontent.com"
+    value: ${{ steps.sign.outputs.certificate-oidc-issuer }}
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      id: sign
+      env:
+        OCM_COMPONENT_VERSIONS: ${{ inputs.component-versions }}
+        OCM_SIGNATURE: ${{ inputs.signature }}
+        OCM_USER_CONFIG: ${{ inputs.config }}
+        OCM_VERIFY: ${{ inputs.verify }}
+        ACTION_PATH: ${{ github.action_path }}
+      with:
+        script: |
+          const { sign } = require(require('node:path').join(process.env.ACTION_PATH, '..', '..', 'cosign.js'));
+          await sign({ core, exec, io });

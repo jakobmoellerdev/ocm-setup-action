@@ -1,0 +1,25 @@
+# ocm expands ${REPOSITORY} (owner/name of the running repository, lowercase) and ${OWNER}.
+components:
+  # Not named after a repository: verify expects the running repository.
+  - name: ocm.software/ocm-setup-action/test
+    version: 1.0.0
+    provider:
+      name: ocm.software
+    resources: &resources
+      - name: greeting
+        type: plainText
+        input:
+          type: utf8/v1
+          text: hello
+  # Named after the running repository: verify derives it from the name.
+  - name: github.com/${REPOSITORY}
+    version: 1.0.0
+    provider:
+      name: ocm.software
+    resources: *resources
+  # Named after another repository, but signed here: verify must reject it by default.
+  - name: github.com/${OWNER}/ocm-setup-action-impostor
+    version: 1.0.0
+    provider:
+      name: ocm.software
+    resources: *resources

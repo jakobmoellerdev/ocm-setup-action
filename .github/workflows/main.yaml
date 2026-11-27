@@ -55,3 +55,150 @@ jobs:
       run: |
         test "${{ steps.setup-again.outputs.cache-hit }}" = "${{ matrix.setup.cache }}"
         ocm version
+
+  sign:
+    # Pull requests from another repository get no OIDC token to sign with.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    name: sign (${{ matrix.os }})
+    permissions:
+      contents: read
+      id-token: write # sign keyless with the workflow identity
+    env:
+      CV: transport-archive//ocm.software/ocm-setup-action/test:1.0.0
+    steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Setup ocm
+      uses: ./
+    - name: Create component versions
+      shell: bash
+      run: |
+        # tr instead of ${VAR,,}: macOS runners run bash 3.2.
+        REPOSITORY="$(tr '[:upper:]' '[:lower:]' <<< "$GITHUB_REPOSITORY")"
+        OWNER="$(tr '[:upper:]' '[:lower:]' <<< "$GITHUB_REPOSITORY_OWNER")"
+        export REPOSITORY OWNER
+        echo "CV_REPOSITORY=transport-archive//github.com/$REPOSITORY:1.0.0" >> "$GITHUB_ENV"
+        echo "CV_IMPOSTOR=transport-archive//github.com/$OWNER/ocm-setup-action-impostor:1.0.0" >> "$GITHUB_ENV"
+        ocm add component-version --constructor .github/test/component-constructor.yaml
+    # Signs every component version in transport-archive, the default repository of ocm add cv.
+    - name: Sign
+      id: sign
+      uses: ./sign/cosign
+    # Inside the reusable workflow called by release.yaml the certificate names this file, not release.yaml.
+    - name: Expect the identity of this workflow file
+      shell: bash
+      env:
+        IDENTITY: ${{ steps.sign.outputs.certificate-identity }}
+        ISSUER: ${{ steps.sign.outputs.certificate-oidc-issuer }}
+        EXPECTED: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/main.yaml@${{ github.ref }}
+      run: |
+        test "$IDENTITY" = "$EXPECTED"
+        test "$ISSUER" = https://token.actions.githubusercontent.com
+    - name: Verify with the generated configuration
+      shell: bash
+      env:
+        CONFIG: ${{ steps.sign.outputs.config }}
+      run: ocm verify component-version --config "$CONFIG" "$CV"
+    - name: Verify without configuration (this repository, derived from the name or the running one)
+      uses: ./verify/cosign
+      with:
+        component-versions: |
+          ${{ env.CV }}
+          ${{ env.CV_REPOSITORY }}
+    - name: Verify all component versions as this repository
+      uses: ./verify/cosign
+      with:
+        repository: ${{ github.repository }}
+    - name: Verify the impostor without configuration
+      id: impostor
+      continue-on-error: true
+      uses: ./verify/cosign
+      with:
+        component-versions: ${{ env.CV_IMPOSTOR }}
+    - name: Verify as this workflow file and ref
+      uses: ./verify/cosign
+      with:
+        component-versions: ${{ env.CV }}
+        workflow: main.yaml
+        ref: ${{ github.ref }}
+    - name: Verify as the exact signing identity
+      uses: ./verify/cosign
+      with:
+        component-versions: ${{ env.CV }}
+        certificate-identity: ${{ steps.sign.outputs.certificate-identity }}
+    - name: Verify as another workflow
+      id: other-workflow
+      continue-on-error: true
+      uses: ./verify/cosign
+      with:
+        component-versions: ${{ env.CV }}
+        workflow: release.yaml
+    - name: Verify as another repository
+      id: other-repository
+      continue-on-error: true
+      uses: ./verify/cosign
+      with:
+        component-versions: ${{ env.CV }}
+        repository: open-component-model/open-component-model
+    - name: Expect the other signers to be rejected
+      shell: bash
+      env:
+        IMPOSTOR: ${{ steps.impostor.outcome }}
+        OTHER_WORKFLOW: ${{ steps.other-workflow.outcome }}
+        OTHER_REPOSITORY: ${{ steps.other-repository.outcome }}
+      run: |
+        test "$IMPOSTOR" = failure
+        test "$OTHER_WORKFLOW" = failure
+        test "$OTHER_REPOSITORY" = failure
+
+  verify:
+    runs-on: ubuntu-latest
+    name: verify (published component version)
+    permissions:
+      contents: read
+    steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Setup ocm
+      uses: ./
+    # A repository could ship a verifier for the same signature; the generated one must still win.
+    - name: Write a conflicting ./.ocmconfig
+      shell: bash
+      run: |
+        cat > .ocmconfig <<'EOF'
+        type: generic.config.ocm.software/v1
+        configurations:
+        - type: signing.config.ocm.software/v1alpha1
+          signature: default
+          verifier:
+            type: SigstoreVerificationConfiguration/v1alpha1
+            certificateIdentity: https://github.com/evil/evil/.github/workflows/evil.yaml@refs/heads/main
+            certificateOIDCIssuer: https://token.actions.githubusercontent.com
+        EOF
+    - name: Verify the OCM CLI component version
+      uses: ./verify/cosign
+      with:
+        component-versions: ghcr.io/open-component-model//ocm.software/cli:0.25.0
+        repository: open-component-model/open-component-model
+        workflow: publish-components.yml
+    - name: Write the verification configuration only
+      id: config-only
+      uses: ./verify/cosign
+      with:
+        component-versions: ""
+        repository: open-component-model/open-component-model
+        workflow: publish-components.yml
+    - name: Verify with the written configuration
+      shell: bash
+      env:
+        CONFIG: ${{ steps.config-only.outputs.config }}
+      run: ocm verify component-version --config "$CONFIG" ghcr.io/open-component-model//ocm.software/cli:0.25.0
