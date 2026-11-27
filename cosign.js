@@ -3,6 +3,7 @@
 // No cosign is installed here: ocm runs the cosign on PATH, or downloads its pinned,
 // checksum-verified FIPS cosign build itself.
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const GITHUB_ACTIONS_ISSUER = 'https://token.actions.githubusercontent.com';
@@ -25,18 +26,32 @@ function writeConfig(signature, entry) {
   return file;
 }
 
-// Returns the ocm arguments and environment that add the generated configuration to the user's.
-// --config replaces ocm's configuration lookup, so it is only used when the user names files.
-function configOptions(generated, userConfigs) {
+// Returns the files of ocm's configuration lookup without --config, in ocm's order: OCM_CONFIG, then
+// the XDG and home directory, then the working directory. The directory of the ocm binary is left out;
+// the setup action installs it into the tool cache, which holds no configuration.
+function discoveredConfigs() {
+  const home = os.homedir();
+  const xdg = process.env.XDG_CONFIG_HOME;
+  const candidates = [
+    process.env.OCM_CONFIG,
+    ...(xdg ? [path.join(xdg, 'ocm', 'config'), path.join(xdg, '.ocmconfig')] : []),
+    path.join(home, '.config', 'ocm', 'config'),
+    path.join(home, '.config', '.ocmconfig'),
+    path.join(home, '.ocm', 'config'),
+    path.join(home, '.ocmconfig'),
+    path.join(process.cwd(), '.ocm', 'config'),
+    path.join(process.cwd(), '.ocmconfig'),
+  ];
+  return [...new Set(candidates.filter((p) => p && fs.statSync(p, { throwIfNoEntry: false })?.isFile()).map((p) => fs.realpathSync(p)))];
+}
+
+// Returns the --config arguments: the user's files (the config input, else what ocm would discover),
+// then the generated file. ocm lets later files win, so a signing entry for the same signature in a
+// user file (e.g. a ./.ocmconfig in the checked out repository) cannot replace the generated signer
+// or verifier.
+function configArgs(generated, userConfigs) {
   const configs = lines(userConfigs);
-  if (configs.length === 0 && process.env.OCM_CONFIG) {
-    configs.push(process.env.OCM_CONFIG);
-  }
-  if (configs.length === 0) {
-    // Without --config, ocm merges OCM_CONFIG with the files it discovers (~/.ocmconfig, ./.ocmconfig, ...).
-    return { args: [], env: { ...process.env, OCM_CONFIG: generated } };
-  }
-  return { args: [...configs, generated].flatMap((c) => ['--config', c]), env: { ...process.env } };
+  return [...(configs.length > 0 ? configs : discoveredConfigs()), generated].flatMap((c) => ['--config', c]);
 }
 
 async function requireOcm(io) {
@@ -52,7 +67,7 @@ async function requireOcm(io) {
 const isRepository = (ref) => !ref.replace(/^[A-Za-z0-9]+::/, '').replace(/^[a-z]+:\/\//, '').includes('//');
 
 // Replaces repository references by references to every component version they hold.
-async function expand(exec, refs, args, env) {
+async function expand(exec, refs, args) {
   const expanded = [];
   for (const ref of refs) {
     if (!isRepository(ref)) {
@@ -60,7 +75,7 @@ async function expand(exec, refs, args, env) {
       continue;
     }
     const { exitCode, stdout, stderr } = await exec.getExecOutput('ocm', ['get', 'component-version', ...args, ref, '-o', 'json'],
-      { env, silent: true, ignoreReturnCode: true });
+      { silent: true, ignoreReturnCode: true });
     if (exitCode !== 0) {
       throw new Error(`listing the component versions in ${ref} failed: ${stderr.trim()}`);
     }
@@ -83,11 +98,11 @@ async function run({ core, exec, io }, signature, configFor, refs, commands) {
     return;
   }
   await requireOcm(io);
-  const listing = configOptions(file, process.env.OCM_USER_CONFIG);
-  for (const ref of await expand(exec, refs, listing.args, listing.env)) {
-    const { args, env } = configOptions(configFor(ref), process.env.OCM_USER_CONFIG);
+  const listing = configArgs(file, process.env.OCM_USER_CONFIG);
+  for (const ref of await expand(exec, refs, listing)) {
+    const args = configArgs(configFor(ref), process.env.OCM_USER_CONFIG);
     for (const command of commands) {
-      await exec.exec('ocm', [command, 'component-version', ...args, '--signature', signature, ref], { env });
+      await exec.exec('ocm', [command, 'component-version', ...args, '--signature', signature, ref]);
     }
   }
 }

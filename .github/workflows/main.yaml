@@ -170,6 +170,20 @@ jobs:
         persist-credentials: false
     - name: Setup ocm
       uses: ./
+    # A repository could ship a verifier for the same signature; the generated one must still win.
+    - name: Write a conflicting ./.ocmconfig
+      shell: bash
+      run: |
+        cat > .ocmconfig <<'EOF'
+        type: generic.config.ocm.software/v1
+        configurations:
+        - type: signing.config.ocm.software/v1alpha1
+          signature: default
+          verifier:
+            type: SigstoreVerificationConfiguration/v1alpha1
+            certificateIdentity: https://github.com/evil/evil/.github/workflows/evil.yaml@refs/heads/main
+            certificateOIDCIssuer: https://token.actions.githubusercontent.com
+        EOF
     - name: Verify the OCM CLI component version
       uses: ./verify/cosign
       with:

@@ -144,11 +144,10 @@ Any workflow of a repository can be run by anyone with write access to it, on an
 
 ### Configuration
 
-The generated configuration holds one `signing.config.ocm.software/v1alpha1` entry scoped to the signature, so it takes precedence over unscoped signing entries in other files. It is combined with your configuration as follows:
+The generated configuration holds one `signing.config.ocm.software/v1alpha1` entry scoped to the signature. `ocm` reads your configuration first and the generated file last (`--config` for each), so the generated signer and verifier always win, also over a signing entry for the same signature in a `./.ocmconfig` of the checked out repository. Your configuration is:
 
-- `config` set: `ocm` reads these files and then the generated one (`--config` for each).
-- `config` empty and `OCM_CONFIG` set: `ocm` reads `OCM_CONFIG` and then the generated file.
-- Otherwise: `ocm` reads the generated file through `OCM_CONFIG`, merged with the files of its default lookup (`~/.ocmconfig`, `./.ocmconfig`, ...).
+- `config` set: these files;
+- otherwise: the files `ocm` finds by itself, in its order: `OCM_CONFIG`, `$XDG_CONFIG_HOME/ocm/config`, `$XDG_CONFIG_HOME/.ocmconfig`, `~/.config/ocm/config`, `~/.config/.ocmconfig`, `~/.ocm/config`, `~/.ocmconfig`, `./.ocm/config`, `./.ocmconfig`. Unlike `ocm`'s own lookup, a file that cannot be read fails the action instead of being skipped.
 
 To run `ocm` yourself, e.g. from a Makefile or Taskfile, set `component-versions` to an empty string and pass the `config` output:
 
