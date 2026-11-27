@@ -1,0 +1,166 @@
+// Signs and verifies OCM component versions keyless with Sigstore (cosign) through the ocm CLI.
+// Invoked from sign/cosign/action.yaml and verify/cosign/action.yaml through actions/github-script.
+// No cosign is installed here: ocm runs the cosign on PATH, or downloads its pinned,
+// checksum-verified FIPS cosign build itself.
+const fs = require('node:fs');
+const path = require('node:path');
+
+const GITHUB_ACTIONS_ISSUER = 'https://token.actions.githubusercontent.com';
+
+const lines = (value) => (value || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+const bool = (value, fallback) => (value || fallback).toLowerCase() === 'true';
+
+// Writes an OCM configuration holding one signing entry for the signature and returns its path.
+// The entry is scoped to the signature, so it wins over unscoped signing entries in other files.
+function writeConfig(signature, entry) {
+  const dir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP, 'ocm-sigstore-'));
+  const file = path.join(dir, 'config.json');
+  const config = {
+    type: 'generic.config.ocm.software/v1',
+    configurations: [{ type: 'signing.config.ocm.software/v1alpha1', signature, ...entry }],
+  };
+  // JSON is valid YAML for ocm and quotes identities and regular expressions safely.
+  fs.writeFileSync(file, JSON.stringify(config, null, 2));
+  return file;
+}
+
+// Returns the ocm arguments and environment that add the generated configuration to the user's.
+// --config replaces ocm's configuration lookup, so it is only used when the user names files.
+function configOptions(generated, userConfigs) {
+  const configs = lines(userConfigs);
+  if (configs.length === 0 && process.env.OCM_CONFIG) {
+    configs.push(process.env.OCM_CONFIG);
+  }
+  if (configs.length === 0) {
+    // Without --config, ocm merges OCM_CONFIG with the files it discovers (~/.ocmconfig, ./.ocmconfig, ...).
+    return { args: [], env: { ...process.env, OCM_CONFIG: generated } };
+  }
+  return { args: [...configs, generated].flatMap((c) => ['--config', c]), env: { ...process.env } };
+}
+
+async function requireOcm(io) {
+  try {
+    await io.which('ocm', true);
+  } catch {
+    throw new Error('ocm is not on PATH: run open-component-model/ocm-setup-action before this action');
+  }
+}
+
+// configFor(ref) returns the generated configuration to use for a component version reference,
+// configFor() the one reported as the config output.
+async function run({ core, exec, io }, signature, configFor, refs, commands) {
+  const file = configFor();
+  core.setOutput('config', file);
+  if (refs.length === 0) {
+    core.info(`Wrote the OCM signing configuration for signature "${signature}" to ${file}`);
+    return;
+  }
+  await requireOcm(io);
+  for (const ref of refs) {
+    const { args, env } = configOptions(configFor(ref), process.env.OCM_USER_CONFIG);
+    for (const command of commands) {
+      await exec.exec('ocm', [command, 'component-version', ...args, '--signature', signature, ref], { env });
+    }
+  }
+}
+
+// Returns the identity Fulcio certifies for this job's OIDC token. The certificate names the workflow
+// file defining the job (job_workflow_ref), which inside a reusable workflow is the called workflow,
+// not github.workflow_ref of the caller.
+async function workflowIdentity(core) {
+  if (!process.env.ACTIONS_ID_TOKEN_REQUEST_URL) {
+    throw new Error('keyless signing needs the GitHub OIDC token: grant the job "permissions: id-token: write"');
+  }
+  const token = await core.getIDToken('sigstore');
+  const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+  if (!claims.iss || !claims.job_workflow_ref) {
+    throw new Error('the GitHub OIDC token has no iss or job_workflow_ref claim');
+  }
+  return { issuer: claims.iss, identity: `${process.env.GITHUB_SERVER_URL}/${claims.job_workflow_ref}` };
+}
+
+async function sign({ core, exec, io }) {
+  const signature = process.env.OCM_SIGNATURE || 'default';
+  const { issuer, identity } = await workflowIdentity(core);
+  core.setOutput('certificate-identity', identity);
+  core.setOutput('certificate-oidc-issuer', issuer);
+  core.info(`Signing as ${identity} (issuer ${issuer})`);
+
+  const file = writeConfig(signature, {
+    signer: { type: 'SigstoreSigningConfiguration/v1alpha1' },
+    verifier: {
+      type: 'SigstoreVerificationConfiguration/v1alpha1',
+      certificateIdentity: identity,
+      certificateOIDCIssuer: issuer,
+    },
+  });
+  const commands = bool(process.env.OCM_VERIFY, 'true') ? ['sign', 'verify'] : ['sign'];
+  await run({ core, exec, io }, signature, () => file, lines(process.env.OCM_COMPONENT_VERSIONS), commands);
+}
+
+// Returns the repository whose workflows must have signed: the repository input, else the repository
+// the component name points to (<server host>/<owner>/<repo>[/...]), else the running repository.
+// The component name comes from the reference the caller asked for, not from the signature.
+function signerRepository(ref) {
+  if (process.env.OCM_REPOSITORY) {
+    return process.env.OCM_REPOSITORY;
+  }
+  const name = ref?.includes('//') ? ref.slice(ref.lastIndexOf('//') + 2).split(/[:@]/)[0] : '';
+  const [host, owner, repo] = name.split('/');
+  if (host === new URL(process.env.GITHUB_SERVER_URL).host && owner && repo) {
+    return `${owner}/${repo}`;
+  }
+  return process.env.GITHUB_REPOSITORY;
+}
+
+// Matches the workflows of the repository, optionally narrowed to a workflow file and a ref; "*" in
+// either matches any characters. The repository matches case-insensitively like GitHub does, since
+// component names are lowercase.
+function repositoryIdentityRegexp(repository) {
+  const { OCM_WORKFLOW: workflow, OCM_REF: ref } = process.env;
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const glob = (s, any) => escape(s).replaceAll('\\*', any);
+  const file = workflow ? glob(path.basename(workflow), '[^/@]*') : '[^/@]+';
+  return `^${escape(process.env.GITHUB_SERVER_URL)}/(?i:${escape(repository)})/\\.github/workflows/${file}@${ref ? glob(ref, '.*') : '.+'}$`;
+}
+
+async function verify({ core, exec, io }) {
+  const signature = process.env.OCM_SIGNATURE || 'default';
+  const {
+    OCM_CERTIFICATE_IDENTITY: identity,
+    OCM_CERTIFICATE_IDENTITY_REGEXP: identityRegexp,
+    OCM_CERTIFICATE_OIDC_ISSUER: issuer,
+    OCM_CERTIFICATE_OIDC_ISSUER_REGEXP: issuerRegexp,
+  } = process.env;
+  if (identity && identityRegexp) {
+    throw new Error('set at most one of certificate-identity and certificate-identity-regexp');
+  }
+  if ((identity || identityRegexp) && (process.env.OCM_WORKFLOW || process.env.OCM_REF)) {
+    throw new Error('workflow and ref cannot be combined with certificate-identity or certificate-identity-regexp');
+  }
+  if (issuer && issuerRegexp) {
+    throw new Error('set at most one of certificate-oidc-issuer and certificate-oidc-issuer-regexp');
+  }
+
+  const issuerConstraint = issuerRegexp
+    ? { certificateOIDCIssuerRegexp: issuerRegexp }
+    : { certificateOIDCIssuer: issuer || GITHUB_ACTIONS_ISSUER };
+  const files = new Map();
+  const configFor = (ref) => {
+    const identityConstraint = identity
+      ? { certificateIdentity: identity }
+      : { certificateIdentityRegexp: identityRegexp || repositoryIdentityRegexp(signerRepository(ref)) };
+    const expected = `${Object.values(identityConstraint)[0]} (issuer ${Object.values(issuerConstraint)[0]})`;
+    core.info(`Expecting signer ${expected}${ref ? ` for ${ref}` : ''}`);
+    if (!files.has(expected)) {
+      files.set(expected, writeConfig(signature, {
+        verifier: { type: 'SigstoreVerificationConfiguration/v1alpha1', ...identityConstraint, ...issuerConstraint },
+      }));
+    }
+    return files.get(expected);
+  };
+  await run({ core, exec, io }, signature, configFor, lines(process.env.OCM_COMPONENT_VERSIONS), ['verify']);
+}
+
+module.exports = { sign, verify };
